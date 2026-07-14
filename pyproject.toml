@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "script-image-downloader"
+version = "0.1.0"
+description = "Segment a YouTube script and download one historically accurate image every 5–7 seconds."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "requests>=2.31.0",
+  "rich>=13.7.0",
+]
+
+[project.scripts]
+script-images = "image_downloader.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["image_downloader*"]
+
