@@ -30,6 +30,15 @@ _NEGATIVE_HINTS = (
     "malware",
     "ibm watson",
     "watson.",
+    "gnukem",
+    "breakanoid",
+    "barrage",
+    "xscreensaver",
+    "vulkanstrasse",
+    "seestrasse",
+    "infosys",
+    "equatex",
+    "reclining man",
 )
 
 # Product/person phrases that must appear as phrases, not loose tokens.
