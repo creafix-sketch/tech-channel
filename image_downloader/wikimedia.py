@@ -19,7 +19,7 @@ USER_AGENT = (
 
 
 class WikimediaClient:
-    def __init__(self, *, session: requests.Session | None = None, pause_sec: float = 0.75):
+    def __init__(self, *, session: requests.Session | None = None, pause_sec: float = 1.25):
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
         self.pause_sec = pause_sec
@@ -110,21 +110,24 @@ class WikimediaClient:
 
     def _get(self, params: dict[str, Any]) -> dict[str, Any]:
         last_error: Exception | None = None
-        for attempt in range(5):
+        for attempt in range(8):
             try:
                 resp = self.session.get(API, params=params, timeout=45)
                 if resp.status_code == 429:
-                    wait = min(30.0, (2 ** attempt) + self.pause_sec)
+                    wait = min(90.0, (2 ** attempt) * 2.0 + self.pause_sec)
+                    last_error = requests.HTTPError(
+                        f"429 Too Many Requests (attempt {attempt + 1})",
+                        response=resp,
+                    )
                     time.sleep(wait)
                     continue
                 resp.raise_for_status()
                 return resp.json()
             except requests.RequestException as exc:
                 last_error = exc
-                time.sleep(min(20.0, (2 ** attempt) * 0.5))
-        if last_error:
-            raise last_error
-        raise RuntimeError("Wikimedia request failed without response")
+                time.sleep(min(45.0, (2 ** attempt) * 1.0))
+        assert last_error is not None
+        raise last_error
 
 
 def _meta_value(meta: dict[str, Any], key: str) -> str:

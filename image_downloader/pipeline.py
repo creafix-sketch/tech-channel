@@ -54,11 +54,10 @@ def run_pipeline(
         for i, query in enumerate(plan.queries):
             found = client.search_candidates(query, limit=search_limit)
             for cand in found:
-                # Continuations may reuse a prior image (hold the shot).
+                # Prefer unseen images; continuations may reuse a prior shot.
                 if cand.image_url in seen_urls and not continuation:
                     continue
                 all_candidates.append(cand)
-            # If the primary query already yielded strong title matches, stop early.
             if i == 0 and all_candidates:
                 prelim_best, _ = pick_best(all_candidates, plan, min_score=min_score)
                 if prelim_best is not None:
@@ -73,12 +72,28 @@ def run_pipeline(
         best, scored = pick_best(candidates, plan, min_score=min_score)
 
         if best is None:
-            # Soften threshold slightly only for highly concrete known subjects.
-            if plan.confidence_hint >= 0.85 and scored:
-                soft_best, scored = pick_best(candidates, plan, min_score=min_score - 0.1)
+            if plan.confidence_hint >= 0.85 and scored and scored[0].score >= min_score - 0.05:
+                soft_best, scored = pick_best(candidates, plan, min_score=min_score - 0.05)
                 best = soft_best
 
+        # If Commons has few unique files for this subject, reuse a prior
+        # matching image rather than leaving a concrete beat empty.
+        if best is None and plan.confidence_hint >= 0.7:
+            reused = []
+            for query in plan.queries[:2]:
+                for cand in client.search_candidates(query, limit=search_limit):
+                    reused.append(cand)
+            reuse_uniq = {}
+            for cand in reused:
+                reuse_uniq.setdefault(cand.image_url, cand)
+            best, scored = pick_best(list(reuse_uniq.values()), plan, min_score=min_score)
+            if best is not None:
+                continuation = True
+
         if best is None:
+            # Still remember concrete subjects so later abstract beats can continue.
+            if plan.confidence_hint >= 0.85 and not continuation:
+                last_concrete_plan = plan
             results.append(
                 SegmentResult(
                     segment=segment,
@@ -95,14 +110,14 @@ def run_pipeline(
             )
             continue
 
-        if plan.confidence_hint >= 0.5 and not continuation:
+        if plan.confidence_hint >= 0.85 and not continuation:
             last_concrete_plan = plan
 
         seen_urls.add(best.image_url)
         note = "Verified against segment subject tokens."
         if continuation:
             note = (
-                "Abstract beat — continued previous concrete subject "
+                "Continued/reused subject "
                 f"({plan.primary_subject}) for B-roll continuity."
             )
         results.append(

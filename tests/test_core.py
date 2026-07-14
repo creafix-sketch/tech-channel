@@ -108,24 +108,56 @@ class VerifierTests(unittest.TestCase):
         self.assertIsNotNone(best)
         self.assertGreaterEqual(best.score, 0.55)
 
-    def test_rejects_unrelated_image(self):
-        plan = build_query_plan("Engineers unveiled ENIAC in 1945.")
+    def test_rejects_substring_false_positive(self):
+        plan = build_query_plan("Ed Iacobucci pressed OS/2 disks.")
         cand = ImageCandidate(
-            title="Sunset over the Pacific Ocean",
-            page_url="https://commons.wikimedia.org/wiki/File:Sunset.jpg",
-            image_url="https://example.com/sunset.jpg",
+            title="T-Rex Technology Center Fountain (cropped).JPG",
+            page_url="https://commons.wikimedia.org/wiki/File:x.jpg",
+            image_url="https://example.com/x.jpg",
             thumb_url=None,
-            description="A scenic sunset photograph",
-            categories=["Sunsets", "Oceans"],
+            description="A fountain",
+            categories=["Florida"],
             artist="Someone",
             license="CC BY 4.0",
             width=2000,
             height=1500,
         )
-        scored = score_candidate(cand, plan)
         best, _ = pick_best([cand], plan, min_score=0.55)
         self.assertIsNone(best)
-        self.assertLess(scored.score, 0.55)
+
+    def test_rejects_aerynos_for_os2(self):
+        plan = build_query_plan("Engineers who used OS/2 will tell you it was better.")
+        cand = ImageCandidate(
+            title="AerynOS 2025.12 GNOME System about - English.png",
+            page_url="https://commons.wikimedia.org/wiki/File:a.png",
+            image_url="https://example.com/a.png",
+            thumb_url=None,
+            description="Screenshot of AerynOS",
+            categories=["Operating systems"],
+            artist="Someone",
+            license="CC BY 4.0",
+            width=2000,
+            height=1500,
+        )
+        best, _ = pick_best([cand], plan, min_score=0.55)
+        self.assertIsNone(best)
+
+    def test_accepts_real_os2_title(self):
+        plan = build_query_plan("Engineers who used OS/2 will tell you it was better.")
+        cand = ImageCandidate(
+            title="IBM OS/2 Warp box.jpg",
+            page_url="https://commons.wikimedia.org/wiki/File:os2.jpg",
+            image_url="https://example.com/os2.jpg",
+            thumb_url=None,
+            description="Retail box of IBM OS/2 Warp",
+            categories=["OS/2", "IBM software"],
+            artist="IBM",
+            license="Fair use",
+            width=2000,
+            height=1500,
+        )
+        best, _ = pick_best([cand], plan, min_score=0.55)
+        self.assertIsNotNone(best)
 
 
 if __name__ == "__main__":

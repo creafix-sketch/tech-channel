@@ -27,6 +27,11 @@ _STOP = {
     "one", "two", "three", "many", "few", "much", "way", "ways", "world",
     "people", "time", "year", "years", "history", "story", "today", "new",
     "old", "great", "big", "small", "real", "true", "important", "famous",
+    "your", "my", "mine", "ours", "yours", "them", "themselves", "himself",
+    "herself", "itself", "someone", "something", "everything", "nothing",
+    "anyone", "anything", "everyone", "everybody", "somebody", "nobody",
+    "things", "thing", "code", "system", "systems", "company", "companies",
+    "market", "reason", "difference", "error", "design", "version",
 }
 
 # Computing-history visual anchors: prefer these when present.
@@ -36,7 +41,7 @@ _KNOWN_SUBJECTS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bEd\s+Iacobucci\b|\bIacobucci\b", re.I), "Ed Iacobucci"),
     (re.compile(r"\bBoca\s+Raton\b", re.I), "IBM Boca Raton"),
     (re.compile(r"\bOS/?2\s+Warp\b|\bcalled\s+Warp\b", re.I), "OS/2 Warp"),
-    (re.compile(r"\bOS/?2\b", re.I), "OS/2 operating system"),
+    (re.compile(r"\bOS/?2\b", re.I), "OS/2"),
     (re.compile(r"\bWorkplace\s+Shell\b", re.I), "OS/2 Workplace Shell"),
     (re.compile(r"\bPS/?2\b|\bPersonal\s+System(?:\s+Two)?\b", re.I), "IBM PS/2 computer"),
     (re.compile(r"\bMicro\s+Channel\b", re.I), "IBM Micro Channel Architecture"),
@@ -133,6 +138,25 @@ def _dedupe(items: list[str]) -> list[str]:
     return out
 
 
+def _extract_proper_nouns(text: str) -> list[str]:
+    """Extract likely proper nouns, ignoring sentence-initial capitalization."""
+    # Split into sentences so we can ignore the first capitalized word of each.
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    found: list[str] = []
+    for sentence in sentences:
+        matches = list(_PROPER.finditer(sentence))
+        for i, m in enumerate(matches):
+            name = m.group(0)
+            if name.lower() in _STOP or len(name) <= 2:
+                continue
+            # Skip a lone Capitalized word at the very start of a sentence —
+            # usually just English sentence case ("Airlines ran it").
+            if i == 0 and m.start() == 0 and " " not in name and not name.isupper():
+                continue
+            found.append(name)
+    return found
+
+
 def _year_in_text(text: str) -> str | None:
     m = _YEAR.search(text)
     return m.group(1) if m else None
@@ -143,8 +167,6 @@ _GENERIC_SUBJECTS = {
     "IBM",
     "Microsoft",
     "Microsoft Windows",
-    "MS-DOS computer",
-    "MS-DOS",
     "Apple Computer",
     "personal computer 1980s",
     "computer software code",
@@ -170,11 +192,7 @@ def build_query_plan(text: str) -> QueryPlan:
     known_hits = _rank_known_hits(known_hits)
 
     year = _year_in_text(text)
-    proper_nouns = [
-        m.group(0)
-        for m in _PROPER.finditer(text)
-        if m.group(0).lower() not in _STOP and len(m.group(0)) > 2
-    ]
+    proper_nouns = _extract_proper_nouns(text)
 
     tech = [m.group(0).lower() for m in _TECH_NOUN.finditer(text)]
 
@@ -185,14 +203,27 @@ def build_query_plan(text: str) -> QueryPlan:
 
     if known_hits:
         primary = known_hits[0]
+        # Workplace Shell screenshots are rare on Commons — treat as OS/2 visually.
+        if primary == "OS/2 Workplace Shell":
+            primary = "OS/2"
+            known_hits = ["OS/2 Workplace Shell", "OS/2"] + [
+                h for h in known_hits if h not in {"OS/2 Workplace Shell", "OS/2"}
+            ]
         confidence = 0.9 if primary not in _GENERIC_SUBJECTS else 0.7
-        queries.append(primary)
+        # Prefer searchable Commons phrases for slash-products.
+        if primary == "OS/2":
+            queries.append("IBM OS/2")
+            queries.append("OS/2")
+        elif primary == "OS/2 Warp":
+            queries.append("OS/2 Warp")
+            queries.append("IBM OS/2")
+        else:
+            queries.append(primary)
         if year and year not in primary:
-            queries.append(f"{primary} {year}")
-        # Secondary known subjects are fallback queries only — verification
-        # still keys off the primary visual subject.
+            queries.append(f"{queries[0]} {year}")
         for subject in known_hits[1:3]:
-            queries.append(subject)
+            if subject not in queries:
+                queries.append(subject)
         must_tokens.extend(_subject_tokens(primary))
     elif proper_nouns:
         # Prefer multi-word proper names / acronyms.
