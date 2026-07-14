@@ -1,11 +1,16 @@
-"""End-to-end pipeline: script → segments → queries → verified images."""
+"""End-to-end pipeline: script → segments → verified UNIQUE images.
 
-from __future__ import annotations
+Hard policy:
+- Never reuse the same image URL in one run.
+- Never ship a weak/wrong match — leave the beat empty instead.
+- Cap lookalike families (e.g. max a few DOS-disk photos per video).
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from .lookalike import LookalikeLimiter, image_family
 from .models import SegmentResult
 from .normalize import normalize_script_text
 from .query_builder import QueryPlan, build_query_plan
@@ -21,6 +26,24 @@ def _tokens_for(subject: str) -> list[str]:
     return [p for p in parts if len(p) > 1][:6]
 
 
+def _empty_result(
+    segment,
+    plan: QueryPlan,
+    *,
+    candidates=None,
+    notes: str,
+) -> SegmentResult:
+    return SegmentResult(
+        segment=segment,
+        queries=plan.queries,
+        primary_subject=plan.primary_subject,
+        status="needs_manual_review",
+        chosen=None,
+        candidates=(candidates or [])[:5],
+        notes=notes,
+    )
+
+
 def run_pipeline(
     script: str,
     *,
@@ -28,19 +51,23 @@ def run_pipeline(
     min_sec: float = 5.0,
     max_sec: float = 7.0,
     target_sec: float = 6.0,
-    min_score: float = 0.55,
-    search_limit: int = 8,
+    min_score: float = 0.65,
+    search_limit: int = 10,
     max_segments: int | None = None,
     client: WikimediaClient | None = None,
     cache_dir: Path | None = None,
     fast: bool = True,
+    allow_reuse: bool = False,
+    max_lookalikes: int | None = None,
 ) -> list[SegmentResult]:
+    """
+    allow_reuse: if False (default), each image URL may appear only once.
+    max_lookalikes: optional override cap applied to all families.
+    """
     client = client or WikimediaClient(
         cache_dir=cache_dir or Path(".cache/wikimedia"),
         fast=fast,
     )
-    # Keep original wording in segments for the editor, but search against
-    # phonetically normalized text so "O-S Two" finds OS/2 images.
     segments = segment_script(
         script,
         wpm=wpm,
@@ -53,25 +80,35 @@ def run_pipeline(
 
     results: list[SegmentResult] = []
     seen_urls: set[str] = set()
-    last_concrete_plan = None
+    limiter = LookalikeLimiter()
+    if max_lookalikes is not None:
+        limiter.caps = {k: max_lookalikes for k in limiter.caps}
 
     for segment in segments:
         search_text = normalize_script_text(segment.text)
         plan = build_query_plan(search_text)
-        continuation = False
-        # Abstract narration beats: keep showing the last concrete subject
-        # rather than inventing a vague keyword image.
-        if plan.confidence_hint < 0.5 and last_concrete_plan is not None:
-            plan = last_concrete_plan
-            continuation = True
+
+        # Abstract beats with no concrete subject: leave empty rather than guess.
+        if plan.confidence_hint < 0.5:
+            results.append(
+                _empty_result(
+                    segment,
+                    plan,
+                    notes=(
+                        "Abstract narration beat with no concrete visual subject. "
+                        "Left empty rather than invent unrelated B-roll."
+                    ),
+                )
+            )
+            continue
 
         all_candidates = []
-        # Search primary subject first; only widen if needed for coverage.
         for i, query in enumerate(plan.queries):
             found = client.search_candidates(query, limit=search_limit)
             for cand in found:
-                # Prefer unseen images; continuations may reuse a prior shot.
-                if cand.image_url in seen_urls and not continuation:
+                if not allow_reuse and cand.image_url in seen_urls:
+                    continue
+                if not limiter.allows(cand):
                     continue
                 all_candidates.append(cand)
             if i == 0 and all_candidates:
@@ -79,7 +116,6 @@ def run_pipeline(
                 if prelim_best is not None:
                     break
 
-        # Deduplicate by image URL within this segment.
         uniq = {}
         for cand in all_candidates:
             uniq.setdefault(cand.image_url, cand)
@@ -87,28 +123,9 @@ def run_pipeline(
 
         best, scored = pick_best(candidates, plan, min_score=min_score)
 
+        # Try alternate known-subject queries, still unique + lookalike-capped.
         if best is None:
-            if plan.confidence_hint >= 0.85 and scored and scored[0].score >= min_score - 0.05:
-                soft_best, scored = pick_best(candidates, plan, min_score=min_score - 0.05)
-                best = soft_best
-
-        # If Commons has few unique files for this subject, reuse a prior
-        # matching image rather than leaving a concrete beat empty.
-        if best is None and plan.confidence_hint >= 0.7:
-            reused = []
-            for query in plan.queries[:2]:
-                for cand in client.search_candidates(query, limit=search_limit):
-                    reused.append(cand)
-            reuse_uniq = {}
-            for cand in reused:
-                reuse_uniq.setdefault(cand.image_url, cand)
-            best, scored = pick_best(list(reuse_uniq.values()), plan, min_score=min_score)
-            if best is not None:
-                continuation = True
-
-        if best is None:
-            # Try secondary known-subject queries with their own verification.
-            for alt in plan.queries[1:3]:
+            for alt in plan.queries[1:4]:
                 alt_plan = build_query_plan(alt)
                 if alt_plan.confidence_hint < 0.7:
                     alt_plan = QueryPlan(
@@ -119,43 +136,34 @@ def run_pipeline(
                     )
                 alt_cands = []
                 for cand in client.search_candidates(alt, limit=search_limit):
+                    if not allow_reuse and cand.image_url in seen_urls:
+                        continue
+                    if not limiter.allows(cand):
+                        continue
                     alt_cands.append(cand)
                 alt_best, alt_scored = pick_best(alt_cands, alt_plan, min_score=min_score)
                 if alt_best is not None:
-                    best, scored = alt_best, alt_scored
-                    plan = alt_plan
+                    best, scored, plan = alt_best, alt_scored, alt_plan
                     break
 
         if best is None:
-            # Still remember concrete subjects so later abstract beats can continue.
-            if plan.confidence_hint >= 0.85 and not continuation:
-                last_concrete_plan = plan
             results.append(
-                SegmentResult(
-                    segment=segment,
-                    queries=plan.queries,
-                    primary_subject=plan.primary_subject,
-                    status="needs_manual_review",
-                    chosen=None,
-                    candidates=scored[:5],
+                _empty_result(
+                    segment,
+                    plan,
+                    candidates=scored,
                     notes=(
-                        "No high-confidence Commons match. "
-                        "Refusing to guess — review manually."
+                        "No unique, high-confidence, non-lookalike match. "
+                        "Left empty rather than use a weak/wrong image."
                     ),
                 )
             )
             continue
 
-        if plan.confidence_hint >= 0.85 and not continuation:
-            last_concrete_plan = plan
+        if not allow_reuse:
+            seen_urls.add(best.image_url)
+        limiter.record(best)
 
-        seen_urls.add(best.image_url)
-        note = "Verified against segment subject tokens."
-        if continuation:
-            note = (
-                "Continued/reused subject "
-                f"({plan.primary_subject}) for B-roll continuity."
-            )
         results.append(
             SegmentResult(
                 segment=segment,
@@ -164,7 +172,9 @@ def run_pipeline(
                 status="matched",
                 chosen=best,
                 candidates=scored[:5],
-                notes=note,
+                notes=(
+                    f"Verified unique match (family={image_family(best)})."
+                ),
             )
         )
 

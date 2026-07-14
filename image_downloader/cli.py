@@ -61,8 +61,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--min-score",
         type=float,
-        default=0.55,
-        help="Minimum relevance score to accept an image (default: 0.55)",
+        default=0.65,
+        help="Minimum relevance score to accept an image (default: 0.65; higher = stricter)",
     )
     p.add_argument(
         "--limit",
@@ -150,7 +150,10 @@ def main(argv: list[str] | None = None) -> int:
         console.print(f"\n{len(shown)} beats · target {args.target_sec}s · {args.wpm} wpm")
         return 0
 
-    console.print("[bold]Searching Wikimedia Commons…[/bold] (prefer accuracy over coverage)")
+    console.print(
+        "[bold]Searching Wikimedia Commons…[/bold] "
+        "(unique + strict relevance; empty beats preferred over wrong images)"
+    )
     results = run_pipeline(
         script,
         wpm=args.wpm,

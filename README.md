@@ -78,7 +78,19 @@ python -m image_downloader SCRIPT.txt
   --plan-only            Segment only
 ```
 
-## Faster runs / rate limits
+## Accuracy policy
+
+Wrong B-roll is worse than a missing beat.
+
+1. Prefer known computing-history entities over vague keywords.
+2. Search Wikimedia Commons (photos/scans preferred over SVG icons).
+3. Score title + description + categories against required subject tokens.
+4. **Each image URL is used at most once** per run (no duplicates).
+5. **Lookalike caps** limit near-identical families (e.g. only a few DOS-disk photos).
+6. If the best score is below `--min-score` (default **0.65**), **do not download** — leave empty.
+7. Abstract narration with no concrete subject is left empty (no guessing).
+
+Raise `--min-score` (e.g. `0.75`) for even stricter picks.
 
 Wikimedia rate-limits aggressive traffic. This tool mitigates that by:
 
