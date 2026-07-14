@@ -125,14 +125,14 @@ class VerifierTests(unittest.TestCase):
         best, _ = pick_best([cand], plan, min_score=0.55)
         self.assertIsNone(best)
 
-    def test_rejects_aerynos_for_os2(self):
+    def test_rejects_red_star_os(self):
         plan = build_query_plan("Engineers who used OS/2 will tell you it was better.")
         cand = ImageCandidate(
-            title="AerynOS 2025.12 GNOME System about - English.png",
-            page_url="https://commons.wikimedia.org/wiki/File:a.png",
-            image_url="https://example.com/a.png",
+            title="Red Star OS 2.0 desktop.png",
+            page_url="https://commons.wikimedia.org/wiki/File:r.png",
+            image_url="https://example.com/r.png",
             thumb_url=None,
-            description="Screenshot of AerynOS",
+            description="Screenshot of Red Star OS 2.0",
             categories=["Operating systems"],
             artist="Someone",
             license="CC BY 4.0",

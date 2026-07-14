@@ -80,6 +80,28 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Only segment the script and print the beat plan (no network)",
     )
+    p.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="Parallel download workers (default: 4, max useful ~6)",
+    )
+    p.add_argument(
+        "--full-size",
+        action="store_true",
+        help="Download original Commons files instead of 1280px thumbnails",
+    )
+    p.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=Path(".cache/wikimedia"),
+        help="Disk cache for Commons search results (default: .cache/wikimedia)",
+    )
+    p.add_argument(
+        "--slow",
+        action="store_true",
+        help="More polite pacing (use if you still hit 429s)",
+    )
     return p
 
 
@@ -137,12 +159,16 @@ def main(argv: list[str] | None = None) -> int:
         target_sec=args.target_sec,
         min_score=args.min_score,
         max_segments=args.limit,
+        cache_dir=args.cache_dir,
+        fast=not args.slow,
     )
 
     manifest = save_results(
         results,
         args.output,
         download=not args.dry_run,
+        workers=args.workers,
+        full_size=args.full_size,
     )
 
     table = Table(title="Results")

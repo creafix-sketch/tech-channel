@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
+from __future__ import annotations
+
+from pathlib import Path
+
 from .models import SegmentResult
 from .normalize import normalize_script_text
-from .query_builder import build_query_plan
+from .query_builder import QueryPlan, build_query_plan
 from .segmenter import segment_script
 from .verifier import pick_best
 from .wikimedia import WikimediaClient
+
+
+def _tokens_for(subject: str) -> list[str]:
+    import re
+
+    parts = re.findall(r"[A-Za-z0-9]+", subject.lower())
+    return [p for p in parts if len(p) > 1][:6]
 
 
 def run_pipeline(
@@ -21,8 +32,13 @@ def run_pipeline(
     search_limit: int = 8,
     max_segments: int | None = None,
     client: WikimediaClient | None = None,
+    cache_dir: Path | None = None,
+    fast: bool = True,
 ) -> list[SegmentResult]:
-    client = client or WikimediaClient()
+    client = client or WikimediaClient(
+        cache_dir=cache_dir or Path(".cache/wikimedia"),
+        fast=fast,
+    )
     # Keep original wording in segments for the editor, but search against
     # phonetically normalized text so "O-S Two" finds OS/2 images.
     segments = segment_script(
@@ -89,6 +105,26 @@ def run_pipeline(
             best, scored = pick_best(list(reuse_uniq.values()), plan, min_score=min_score)
             if best is not None:
                 continuation = True
+
+        if best is None:
+            # Try secondary known-subject queries with their own verification.
+            for alt in plan.queries[1:3]:
+                alt_plan = build_query_plan(alt)
+                if alt_plan.confidence_hint < 0.7:
+                    alt_plan = QueryPlan(
+                        primary_subject=alt,
+                        queries=[alt],
+                        must_include_tokens=_tokens_for(alt),
+                        confidence_hint=0.85,
+                    )
+                alt_cands = []
+                for cand in client.search_candidates(alt, limit=search_limit):
+                    alt_cands.append(cand)
+                alt_best, alt_scored = pick_best(alt_cands, alt_plan, min_score=min_score)
+                if alt_best is not None:
+                    best, scored = alt_best, alt_scored
+                    plan = alt_plan
+                    break
 
         if best is None:
             # Still remember concrete subjects so later abstract beats can continue.

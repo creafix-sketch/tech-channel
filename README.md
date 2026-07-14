@@ -78,14 +78,32 @@ python -m image_downloader SCRIPT.txt
   --plan-only            Segment only
 ```
 
-## Accuracy policy
+## Faster runs / rate limits
 
-1. Prefer known computing-history entities over vague keywords.
-2. Search Wikimedia Commons file pages (photos/scans preferred over SVG icons).
-3. Score title + description + categories against required subject tokens.
-4. If the best score is below `--min-score`, **do not download** — mark for review.
+Wikimedia rate-limits aggressive traffic. This tool mitigates that by:
 
-Raise `--min-score` (e.g. `0.7`) when you want fewer, safer picks.
+1. **Disk-caching** Commons search results in `.cache/wikimedia` (re-runs are much faster)
+2. **Downloading 1280px thumbnails** by default (smaller/faster than originals)
+3. **Parallel downloads** of unique URLs only (`--workers 4`), then copying for reused beats
+4. **Adaptive backoff** that respects `Retry-After` on HTTP 429
+
+Recommended for a full video:
+
+```bash
+# First pass: search + score (fills disk cache)
+python -m image_downloader examples/os2_ibm_microsoft.txt -o output/os2 --dry-run
+
+# Second pass: download unique thumbs in parallel (reuses cache → much faster)
+python -m image_downloader examples/os2_ibm_microsoft.txt -o output/os2 --workers 6
+```
+
+If you still see 429s:
+
+```bash
+python -m image_downloader SCRIPT.txt -o output/run --slow --workers 2
+```
+
+Use `--full-size` only when you need archival originals for zoom/crop.
 
 ## Tests
 

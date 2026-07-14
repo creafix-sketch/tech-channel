@@ -1,10 +1,10 @@
-__pycache__/
-*.py[cod]
+.gitignore
 .venv/
 venv/
 dist/
 build/
 *.egg-info/
 output/
+.cache/
 .pytest_cache/
 .DS_Store

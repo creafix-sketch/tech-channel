@@ -24,13 +24,21 @@ _NEGATIVE_HINTS = (
     "screenshot of wikipedia",
     "aerynos",
     "endless os",
+    "red star",
+    "wikivoyage",
     "virus for",
     "malware",
+    "ibm watson",
+    "watson.",
 )
 
 # Product/person phrases that must appear as phrases, not loose tokens.
 _PHRASE_REQUIREMENTS: list[tuple[re.Pattern[str], re.Pattern[str]]] = [
-    (re.compile(r"os/?2", re.I), re.compile(r"\bos/?2\b|\bos2\b|\bos\s*2\b", re.I)),
+    # Allow "OS/2", "OS-2", "OS2", and "OS 2" — but not "OS 2.0" (other products).
+    (
+        re.compile(r"os/?2", re.I),
+        re.compile(r"\bos/?2\b|\bos-2\b|(?<![a-z])os2(?![a-z0-9])|\bos\s+2(?!\.\d)\b", re.I),
+    ),
     (re.compile(r"iacobucci", re.I), re.compile(r"\biacobucci\b", re.I)),
     (re.compile(r"ps/?2", re.I), re.compile(r"\bps/?2\b|\bps2\b|\bps\s*2\b", re.I)),
     (re.compile(r"ms-?dos", re.I), re.compile(r"\bms-?dos\b|\bdos\b", re.I)),
