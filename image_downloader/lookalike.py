@@ -8,21 +8,22 @@ from .models import ImageCandidate
 
 # Max images allowed per visual family in one video (reduces spam).
 DEFAULT_FAMILY_CAPS: dict[str, int] = {
-    "os2_media": 8,
-    "dos_media": 4,
-    "windows3": 6,
-    "windows95": 3,
-    "windows_nt": 4,
-    "ibm_ps2": 4,
-    "ibm_building": 3,
-    "ibm_pc": 4,
-    "floppy_generic": 3,
-    "microsoft_person": 3,
-    "atm": 3,
-    "citrix": 2,
-    "lotus": 2,
-    "subway": 2,
-    "other": 12,
+    "os2_media": 16,
+    "dos_media": 8,
+    "windows3": 10,
+    "windows95": 5,
+    "windows_nt": 6,
+    "ibm_ps2": 8,
+    "ibm_building": 5,
+    "ibm_pc": 8,
+    "floppy_generic": 6,
+    "microsoft_person": 5,
+    "atm": 5,
+    "citrix": 3,
+    "lotus": 3,
+    "subway": 4,
+    "office_pc": 10,
+    "other": 20,
 }
 
 
@@ -56,6 +57,8 @@ def image_family(candidate: ImageCandidate) -> str:
         return "lotus"
     if re.search(r"subway|metrocard|turnstile", blob):
         return "subway"
+    if re.search(r"office|desktop pc|crt monitor|workstation", blob):
+        return "office_pc"
     return "other"
 
 

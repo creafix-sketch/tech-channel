@@ -61,8 +61,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--min-score",
         type=float,
-        default=0.65,
-        help="Minimum relevance score to accept an image (default: 0.65; higher = stricter)",
+        default=0.58,
+        help="Minimum relevance score to accept an image (default: 0.58; higher = stricter)",
     )
     p.add_argument(
         "--limit",
