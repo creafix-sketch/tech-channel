@@ -1,0 +1,8 @@
+In 1945, engineers unveiled ENIAC, a giant machine filled with vacuum tubes and cables.
+Alan Turing had already imagined a universal computing device that could follow any algorithm.
+By the mid-1970s, the Altair 8800 sparked a hobbyist revolution in personal computing.
+Steve Wozniak and Steve Jobs launched the Apple II in 1977, bringing color graphics to homes.
+The IBM PC arrived in 1981 and quickly standardized the personal computer industry.
+Then Tim Berners-Lee created the World Wide Web at CERN, connecting information across the planet.
+Moore's Law and the rise of the integrated circuit made machines smaller, faster, and cheaper every year.
+From Babbage's Analytical Engine to Silicon Valley, the story of computing is a story of bold ideas made real.
