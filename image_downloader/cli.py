@@ -9,8 +9,8 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from .downloader import save_results
-from .pipeline import run_pipeline
+from .pipeline import run_pipeline, save_pipeline_outputs
+from .web_search_provider import web_search_enabled
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -18,7 +18,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="script-images",
         description=(
             "Segment a YouTube script into ~5–7s beats and download one "
-            "historically relevant Wikimedia Commons image per beat. "
+            "historically relevant image per beat from free sources "
+            "(Commons, Openverse, Wikipedia). Optional: Google CSE / SerpAPI "
+            "and a local image library for full coverage. "
             "Low-confidence matches are refused rather than guessed."
         ),
     )
@@ -61,8 +63,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--min-score",
         type=float,
-        default=0.58,
-        help="Minimum relevance score to accept an image (default: 0.58; higher = stricter)",
+        default=0.55,
+        help="Minimum relevance score to accept an image (default: 0.55; higher = stricter)",
     )
     p.add_argument(
         "--limit",
@@ -101,6 +103,30 @@ def build_parser() -> argparse.ArgumentParser:
         "--slow",
         action="store_true",
         help="More polite pacing (use if you still hit 429s)",
+    )
+    p.add_argument(
+        "--local-library",
+        type=Path,
+        default=None,
+        help=(
+            "Folder of images you already collected. Filenames with subject "
+            "keywords are matched to empty beats for full coverage."
+        ),
+    )
+    p.add_argument(
+        "--no-wikipedia",
+        action="store_true",
+        help="Disable Wikipedia page-image search",
+    )
+    p.add_argument(
+        "--no-openverse",
+        action="store_true",
+        help="Disable Openverse CC search",
+    )
+    p.add_argument(
+        "--no-web-search",
+        action="store_true",
+        help="Disable optional Google CSE / SerpAPI even if API keys are set",
     )
     return p
 
@@ -150,8 +176,18 @@ def main(argv: list[str] | None = None) -> int:
         console.print(f"\n{len(shown)} beats · target {args.target_sec}s · {args.wpm} wpm")
         return 0
 
+    sources = ["Commons"]
+    if not args.no_openverse:
+        sources.append("Openverse")
+    if not args.no_wikipedia:
+        sources.append("Wikipedia")
+    if not args.no_web_search and web_search_enabled():
+        sources.append("Google/SerpAPI")
+    if args.local_library:
+        sources.append(f"local:{args.local_library}")
+
     console.print(
-        "[bold]Searching Wikimedia Commons…[/bold] "
+        f"[bold]Searching {' + '.join(sources)}…[/bold] "
         "(unique + strict relevance; empty beats preferred over wrong images)"
     )
     results = run_pipeline(
@@ -164,9 +200,13 @@ def main(argv: list[str] | None = None) -> int:
         max_segments=args.limit,
         cache_dir=args.cache_dir,
         fast=not args.slow,
+        use_openverse=not args.no_openverse,
+        use_wikipedia=not args.no_wikipedia,
+        use_web_search=not args.no_web_search,
+        local_library=args.local_library,
     )
 
-    manifest = save_results(
+    manifest = save_pipeline_outputs(
         results,
         args.output,
         download=not args.dry_run,
@@ -207,10 +247,15 @@ def main(argv: list[str] | None = None) -> int:
         f"Needs review [yellow]{review}[/yellow] · "
         f"Manifest: {manifest}"
     )
-    if review:
+    missing_path = args.output / "missing_beats.md"
+    if review and missing_path.exists():
         console.print(
-            "[yellow]Beats marked needs_manual_review were intentionally left empty "
-            "to avoid wrong B-roll.[/yellow]"
+            f"[yellow]{review} empty beats[/yellow] → fill checklist: "
+            f"[bold]{missing_path}[/bold] (Google Images links + suggested filenames)"
+        )
+        console.print(
+            "Full coverage: search those links → drop unique images into a folder → re-run with "
+            "[bold]--local-library ./my_images[/bold]"
         )
     return 0
 

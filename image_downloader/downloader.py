@@ -32,6 +32,15 @@ def download_image(
     session: requests.Session | None = None,
     max_attempts: int = 6,
 ) -> Path:
+    # Local library files: copy instead of HTTP fetch
+    if url.startswith("file://"):
+        src = Path(url[7:])
+        if not src.exists():
+            raise FileNotFoundError(f"Local image not found: {src}")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        return dest
+
     sess = session or requests.Session()
     sess.headers.update({"User-Agent": USER_AGENT})
     last_error: Exception | None = None
@@ -67,6 +76,11 @@ def download_image(
 
 
 def extension_from_url(url: str) -> str:
+    if url.startswith("file://"):
+        suffix = Path(url[7:]).suffix.lower()
+        if suffix in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".tif", ".tiff"}:
+            return suffix
+        return ".jpg"
     path = url.split("?", 1)[0]
     suffix = Path(path).suffix.lower()
     if suffix in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".tif", ".tiff"}:
@@ -75,6 +89,11 @@ def extension_from_url(url: str) -> str:
 
 
 def _best_url(chosen, *, full_size: bool) -> str:
+    # Prefer local filesystem path for library fills
+    if chosen.image_url.startswith("file://"):
+        return chosen.image_url
+    if chosen.thumb_url and str(chosen.thumb_url).startswith("file://"):
+        return chosen.thumb_url
     if full_size:
         return chosen.image_url
     return chosen.thumb_url or chosen.image_url
@@ -168,7 +187,8 @@ def save_results(
     lines = [
         "# Image attributions",
         "",
-        "Images sourced from Wikimedia Commons. Check each license before publishing.",
+        "Images sourced from Wikimedia Commons, Openverse, Wikipedia, optional web APIs,",
+        "and/or a local library you provided. Check each license before publishing.",
         "",
     ]
     for result in results:

@@ -162,3 +162,47 @@ class VerifierTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LocalLibraryTests(unittest.TestCase):
+    def test_matches_keyword_filename(self):
+        import tempfile
+        from pathlib import Path
+        from image_downloader.local_library import LocalLibrary
+
+        png = bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+            "0000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "bill-gates-microsoft.png"
+            path.write_bytes(png)
+            lib = LocalLibrary(Path(td))
+            hits = lib.search_candidates(["Bill Gates", "Microsoft"], limit=3)
+            self.assertTrue(hits)
+            self.assertIn("local_library", hits[0].categories)
+
+
+class MissingBeatsTests(unittest.TestCase):
+    def test_writes_markdown_and_csv(self):
+        import tempfile
+        from pathlib import Path
+        from image_downloader.missing import write_missing_beats
+        from image_downloader.models import Segment, SegmentResult
+
+        seg = Segment(index=3, start_sec=10.0, end_sec=16.0, text="OS/2 shipped late", word_count=4)
+        result = SegmentResult(
+            segment=seg,
+            queries=["OS/2"],
+            primary_subject="OS/2",
+            status="needs_manual_review",
+            notes="empty",
+        )
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td)
+            md = write_missing_beats([result], out)
+            self.assertTrue(md.exists())
+            text = md.read_text()
+            self.assertIn("Beat 003", text)
+            self.assertIn("google.com/search", text)
+            self.assertTrue((out / "missing_beats.csv").exists())
